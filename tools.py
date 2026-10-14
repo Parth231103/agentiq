@@ -9,7 +9,7 @@ from document_loader import load_url
 
 @tool
 def search_knowledge_base(query: str) -> str:
-    #Searches indexed company files, policies, and documents for relevant information
+    """Searches indexed company files, policies, and documents for relevant information."""
     results = similarity_search(query, top_k=3)
     if not results:
         return "No relevant records found in the knowledge base."

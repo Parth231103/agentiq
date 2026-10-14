@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
@@ -63,6 +64,18 @@ class AppConfig(BaseSettings):
 
 config = AppConfig()
 config.setup_directories()
+
+
+def get_llm():
+    api_key = os.getenv("OPENAI_API_KEY") or config.llm.openai_api_key or "freellmapi-1e5e64ac371b05264151329356675dc3c535c47980b22a8f"
+    base_url = os.getenv("OPENAI_BASE_URL") or config.llm.openai_base_url or "http://127.0.0.1:31415/v1"
+    return ChatOpenAI(
+        model=config.llm.chat_model,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=config.llm.temperature,
+        streaming=config.llm.streaming,
+    )
 
 
 if __name__ == "__main__":
