@@ -8,12 +8,14 @@ from langchain_openai import ChatOpenAI
 load_dotenv()
 
 
+BASE_DIR = Path(__file__).resolve().parent
+
+
 class LLMConfig(BaseSettings):
-    provider: str = "openai"
-    openai_api_key: str = Field(default="freellmapi-1e5e64ac371b05264151329356675dc3c535c47980b22a8f")
-    openai_base_url: str = Field(default="http://127.0.0.1:31415/v1")
+    provider: str = Field(default="auto")
+    openai_api_key: str | None = Field(default=None)
+    openai_base_url: str | None = Field(default=None)
     chat_model: str = Field(default="auto")
-    embedding_model: str = Field(default="text-embedding-3-small")
     temperature: float = 0.1
     max_tokens: int = 4096
     streaming: bool = True
@@ -21,10 +23,11 @@ class LLMConfig(BaseSettings):
 
 class VectorStoreConfig(BaseSettings):
     collection_name: str = "agentiq_docs"
-    persist_directory: str = "./data/chroma_db"
+    persist_directory: str = str(BASE_DIR / "data" / "chroma_db")
     chunk_size: int = 1000
     chunk_overlap: int = 200
     top_k: int = 5
+    rrf_k: int = 60  # Reciprocal Rank Fusion smoothing constant
 
 
 class MemoryConfig(BaseSettings):
@@ -40,6 +43,7 @@ class AgentConfig(BaseSettings):
     analyst_name: str = "Analyst"
     max_agent_steps: int = 10
     recursion_limit: int = 25
+    enable_human_in_the_loop: bool = True
 
 
 class AppConfig(BaseSettings):
@@ -49,12 +53,12 @@ class AppConfig(BaseSettings):
     agent: AgentConfig = AgentConfig()
 
     app_name: str = "AgentIQ"
-    app_version: str = "1.0.0"
+    app_version: str = "1.1.0"
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
-    data_dir: Path = Path("./data")
-    uploads_dir: Path = Path("./data/uploads")
+    data_dir: Path = BASE_DIR / "data"
+    uploads_dir: Path = BASE_DIR / "data" / "uploads"
 
     def setup_directories(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -67,30 +71,46 @@ config.setup_directories()
 
 
 def get_llm():
-    api_key = os.getenv("OPENAI_API_KEY") or config.llm.openai_api_key or "freellmapi-1e5e64ac371b05264151329356675dc3c535c47980b22a8f"
-    base_url = os.getenv("OPENAI_BASE_URL") or config.llm.openai_base_url or "http://127.0.0.1:31415/v1"
+    """Centralized LLM factory with dynamic provider routing:
+    Supports OpenRouter, Groq, OpenAI, or local OpenAI-compatible backends.
+    Prioritizes explicit environment keys with zero hardcoded credentials.
+    """
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY") or config.llm.openai_api_key
+    openai_base_url = os.getenv("OPENAI_BASE_URL") or config.llm.openai_base_url
+
+    headers = {}
+    if openrouter_key:
+        api_key = openrouter_key
+        base_url = "https://openrouter.ai/api/v1"
+        model = os.getenv("OPENROUTER_MODEL") or os.getenv("CHAT_MODEL") or "nvidia/nemotron-3.5-lightning:free"
+        headers = {
+            "HTTP-Referer": "https://github.com/parth231103/agentiq",
+            "X-Title": "AgentIQ"
+        }
+    elif groq_key and not openai_key:
+        api_key = groq_key
+        base_url = "https://api.groq.com/openai/v1"
+        model = os.getenv("GROQ_MODEL") or os.getenv("CHAT_MODEL") or "llama-3.3-70b-versatile"
+    elif openai_key:
+        api_key = openai_key
+        base_url = openai_base_url or "https://api.openai.com/v1"
+        model = os.getenv("CHAT_MODEL") or config.llm.chat_model
+    else:
+        api_key = "local"
+        base_url = openai_base_url or "http://127.0.0.1:31415/v1"
+        model = os.getenv("CHAT_MODEL") or "auto"
+
     return ChatOpenAI(
-        model=config.llm.chat_model,
+        model=model,
         api_key=api_key,
         base_url=base_url,
         temperature=config.llm.temperature,
         streaming=config.llm.streaming,
+        default_headers=headers if headers else None,
     )
 
 
 if __name__ == "__main__":
-    print(f" {config.app_name} v{config.app_version}")
-    print(f" Provider: {config.llm.provider}")
-    print(f" Base URL: {config.llm.openai_base_url}")
-    print(f" Chat Model: {config.llm.chat_model}")
-    print(f" Embedding Model: {config.llm.embedding_model}")
-    print(f"  Vector DB: {config.vector_store.persist_directory}")
-    print(f" Chunk Size: {config.vector_store.chunk_size}")
-    print(f" Top-K: {config.vector_store.top_k}")
-    print(f" Memory Turns: {config.memory.max_conversation_turns}")
-
-    if config.llm.openai_api_key:
-        print(f" API Key: ***...{config.llm.openai_api_key[-4:]}")
-    else:
-        print("  No API key found! Add OPENAI_API_KEY to .env")
-    
+    print(f"AgentIQ Config initialized: {config.app_name} v{config.app_version}")

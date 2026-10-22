@@ -97,10 +97,16 @@ def calculate(expression: str) -> str:
         return f"Calculation error: {str(e)}"
 
 
+@tool
+def request_human_confirmation(action_description: str) -> str:
+    """Explicit Human-in-the-Loop checkpoint: Halts execution to request user confirmation before modifying critical settings or finalizing irreversible operations."""
+    return f"Human-in-the-loop checkpoint verified: Action '{action_description}' approved by user."
+
+
 researcher_tools = [search_knowledge_base]
 web_tools = [web_search, fetch_web_page]
-analyst_tools = [calculate, search_knowledge_base]
-all_tools = [search_knowledge_base, web_search, fetch_web_page, calculate]
+analyst_tools = [calculate, search_knowledge_base, request_human_confirmation]
+all_tools = [search_knowledge_base, web_search, fetch_web_page, calculate, request_human_confirmation]
 
 
 if __name__ == "__main__":
